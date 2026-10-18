@@ -1,0 +1,67 @@
+import torch.nn as nn
+
+from .swin_transformer import PatchEmbed, PatchMerging, BasicLayer
+# i/p img -> patchembed -> downsample x3
+# swintransformer encoder
+class Down(nn.Module):
+    #swinblks per stage depths=(2, 2, 6, 2)
+    #stage 1 : 2, stage 2: 2, stage 3: 6, stage 4: 2
+    def __init__(self, down_scale=2, in_dim=64, depths=(2, 2, 6, 2)):
+        super(Down, self).__init__()
+        #PYRAMID ENCODER 
+        #first layer patch embedding - split into patches 
+        self.inc = PatchEmbed(img_size=256, patch_size=down_scale, in_chans=6, embed_dim=in_dim,
+                              norm_layer=nn.LayerNorm)
+        #128x128, 64 channels after patchembed 
+        self.down1 = DownBlock(in_channels=in_dim, out_channels=in_dim * 2, resolution=256 // down_scale,
+                               downsample=PatchMerging, cur_depth=depths[0])
+        #64x64, 128 
+        self.down2 = DownBlock(in_channels=in_dim * 2, out_channels=in_dim * 4, resolution=128 // down_scale,
+                               downsample=PatchMerging, cur_depth=depths[1])
+        #32x32, 256 
+        self.down3 = DownBlock(in_channels=in_dim * 4, out_channels=in_dim * 8, resolution=64 // down_scale,
+                               downsample=PatchMerging, cur_depth=depths[2])
+        #16x16, 512 
+        self.down4 = DownBlock(in_channels=in_dim * 8, out_channels=in_dim * 8, resolution=32 // down_scale,
+                               downsample=PatchMerging, cur_depth=depths[3])
+        #8x8, 512
+#multi scale feature maps 
+    def forward(self, x):
+        #forward pass
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+
+        return x1, x2, x3, x4, x5
+
+
+class DownBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, resolution, downsample, cur_depth):
+        super(DownBlock, self).__init__()
+        #basiclayer applies window based self attn, shifted windows, mlp, layernorm
+        self.layer = BasicLayer(dim=in_channels,
+                                input_resolution=(resolution, resolution),
+                                depth=cur_depth,
+                                num_heads=in_channels // 32,
+                                window_size=8,
+                                mlp_ratio=1,
+                                qkv_bias=True, qk_scale=None,
+                                drop=0., attn_drop=0.,
+                                drop_path=0.,
+                                norm_layer=nn.LayerNorm)
+
+        if downsample is not None:
+            self.downsample = downsample((resolution, resolution), in_channels, out_channels)
+        else:
+            self.downsample = None
+
+    def forward(self, x):
+        x_o = self.layer(x)
+
+        if self.downsample is not None:
+            x_o = self.downsample(x_o)
+
+        return x_o
+
