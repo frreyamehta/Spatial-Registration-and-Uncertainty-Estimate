@@ -61,7 +61,7 @@ def to_gray_uint8(image):
 
     gray = cv2.cvtColor(rgb_uint8, cv2.COLOR_RGB2GRAY)
 
-    # 🔥 CRITICAL: CLAHE (not simple equalization)
+    # CRITICAL: CLAHE (not simple equalization)
     clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8,8))
     gray = clahe.apply(gray)
 
